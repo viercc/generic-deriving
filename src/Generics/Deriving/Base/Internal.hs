@@ -600,6 +600,7 @@ module Generics.Deriving.Base.Internal (
   -- * Generic representation types
     V1, U1(..), Par1(..), Rec1(..), K1(..), M1(..)
   , (:+:)(..), (:*:)(..), (:.:)(..)
+  , (:->:)(..)
 
   -- ** Synonyms for convenience
   , Rec0, Par0, R, P
@@ -613,7 +614,7 @@ module Generics.Deriving.Base.Internal (
   , Generic(..), Generic1(..),
 
 #else
-  module GHC.Generics,
+  module GHC.Generics, (:->:)(..)
 #endif
 #if !(MIN_VERSION_base(4,9,0))
   -- ** Unboxed representation types
@@ -1134,3 +1135,7 @@ type UInt    = URec Int
 -- | Type synonym for 'URec': 'Word#'
 type UWord   = URec Word
 #endif
+
+-- | Arrows between functors
+infixr 4 :->:
+newtype (:->:) f g p = Arr1 { unArr1 :: f p -> g p }

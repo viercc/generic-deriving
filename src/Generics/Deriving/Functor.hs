@@ -22,11 +22,16 @@ module Generics.Deriving.Functor (
   -- * Generic Functor class
     GFunctor(..)
 
-  -- * Default method
+  -- * Generic Contravariant class
+  , GContravariant(..)
+  
+  -- * Default methods
   , gmapdefault
+  , gcontramapdefault
 
   -- * Internal Functor class
   , GFunctor'(..)
+  , GContravariant'(..)
 
   ) where
 
@@ -98,6 +103,9 @@ instance (GFunctor' f, GFunctor' g) => GFunctor' (f :*: g) where
 instance (GFunctor f, GFunctor' g) => GFunctor' (f :.: g) where
   gmap' f (Comp1 x) = Comp1 (gmap (gmap' f) x)
 
+instance (GContravariant' f, GFunctor' g) => GFunctor' (f :->: g) where
+  gmap' f (Arr1 h) = Arr1 (gmap' f . h . gcontramap' f)
+
 instance GFunctor' UAddr where
   gmap' _ (UAddr a) = UAddr a
 
@@ -115,6 +123,61 @@ instance GFunctor' UInt where
 
 instance GFunctor' UWord where
   gmap' _ (UWord w) = UWord w
+
+class GContravariant' f where
+  gcontramap' :: (a -> b) -> f b -> f a
+
+instance GContravariant' V1 where
+  gcontramap' _ x = case x of
+#if __GLASGOW_HASKELL__ >= 708
+                {}
+#else
+                !_ -> error "Void gcontramap"
+#endif
+
+instance GContravariant' U1 where
+  gcontramap' _ U1 = U1
+
+instance GContravariant' (K1 i c) where
+  gcontramap' _ (K1 a) = K1 a
+
+instance (GContravariant' f) => GContravariant' (Rec1 f) where
+  gcontramap' f (Rec1 a) = Rec1 (gcontramap' f a)
+
+instance (GContravariant' f) => GContravariant' (M1 i c f) where
+  gcontramap' f (M1 a) = M1 (gcontramap' f a)
+
+instance (GContravariant' f, GContravariant' g) => GContravariant' (f :+: g) where
+  gcontramap' f (L1 a) = L1 (gcontramap' f a)
+  gcontramap' f (R1 a) = R1 (gcontramap' f a)
+
+instance (GContravariant' f, GContravariant' g) => GContravariant' (f :*: g) where
+  gcontramap' f (a :*: b) = gcontramap' f a :*: gcontramap' f b
+
+instance (GFunctor f, GContravariant' g) => GContravariant' (f :.: g) where
+  gcontramap' f (Comp1 x) = Comp1 (gmap (gcontramap' f) x)
+
+instance (GFunctor' f, GContravariant' g) => GContravariant' (f :->: g) where
+  gcontramap' f (Arr1 h) = Arr1 (gcontramap' f . h . gmap' f)
+  
+instance GContravariant' UAddr where
+  gcontramap' _ (UAddr a) = UAddr a
+
+instance GContravariant' UChar where
+  gcontramap' _ (UChar c) = UChar c
+
+instance GContravariant' UDouble where
+  gcontramap' _ (UDouble d) = UDouble d
+
+instance GContravariant' UFloat where
+  gcontramap' _ (UFloat f) = UFloat f
+
+instance GContravariant' UInt where
+  gcontramap' _ (UInt i) = UInt i
+
+instance GContravariant' UWord where
+  gcontramap' _ (UWord w) = UWord w
+
 
 class GFunctor f where
   gmap :: (a -> b) -> f a -> f b
@@ -229,3 +292,16 @@ instance GFunctor WrappedMonoid where
 
 instance GFunctor ZipList where
   gmap = gmapdefault
+
+class GContravariant f where
+  gcontramap :: (a -> b) -> f b -> f a
+
+#if __GLASGOW_HASKELL__ >= 701
+  default gcontramap :: (Generic1 f, GContravariant' (Rep1 f))
+               => (a -> b) -> f b -> f a
+  gcontramap = gcontramapdefault
+#endif
+
+gcontramapdefault :: (Generic1 f, GContravariant' (Rep1 f))
+            => (a -> b) -> f b -> f a
+gcontramapdefault f = to1 . gcontramap' f . from1

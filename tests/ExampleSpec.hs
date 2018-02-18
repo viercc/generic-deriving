@@ -28,6 +28,8 @@ import           GHC.Exts (Addr#, Char#, Double#, Float#, Int#, Word#)
 
 import           Prelude hiding (Either(..))
 
+import           Control.Applicative ((<|>))
+
 import           Test.Hspec (Spec, describe, hspec, it, parallel, shouldBe)
 
 import qualified Text.Read.Lex (Lexeme)
@@ -145,7 +147,7 @@ spec = parallel $ do
         it "gshow (gmap gshow grose1)" $
             gshow (gmap gshow grose1) `shouldBe`
                 "GRose [\"1\",\"2\"] [GRose [\"3\"] [],GRose [] []]"
-
+    
     describe "Tests for Either" $ do
         it "gshow either1" $
             gshow either1 `shouldBe`
@@ -172,6 +174,19 @@ spec = parallel $ do
         it "gshow (gmap gshow bush1)" $
             gshow (gmap gshow bush1) `shouldBe`
                 "BushCons \"0\" (BushCons (BushCons \"1\" BushNil) BushNil)"
+    
+    describe "Tests for Reader" $
+        it "runReader fmappedReader 100 == runReader fmappedReader 100" $
+            runReader gmappedReader 100 `shouldBe`
+            runReader fmappedReader 100
+    
+    describe "Tests for ComplicatedMonad" $ do
+        it "runCM1 fmappedCM 100 == runCM1 gmappedCM 100" $
+            runCM1 fmappedCM 100 `shouldBe`
+            runCM1 gmappedCM 100
+        it "runCM2 fmappedCM positive == runCM2 gmappedCM positive" $
+            runCM2 fmappedCM positive `shouldBe`
+            runCM2 gmappedCM positive
 
 -------------------------------------------------------------------------------
 -- Example: Haskell's lists and Maybe
@@ -331,6 +346,43 @@ data Weird a = Weird [[[a]]] deriving Show
 instance GFunctor Weird where
   gmap = gmapdefault
 
+-------------------------------------------------------------------------------
+-- Example: Test for arrow type (kind * -> *), simple
+-------------------------------------------------------------------------------
+
+data Reader r a = Reader { runReader :: r -> a } deriving Functor
+
+instance GFunctor (Reader r) where
+  gmap = gmapdefault
+
+reader1 :: Reader Int String
+reader1 = Reader show
+
+fmappedReader, gmappedReader :: Reader Int Int
+fmappedReader = fmap length reader1
+gmappedReader = gmap length reader1
+
+-------------------------------------------------------------------------------
+-- Example: Test for arrow type (kind * -> *), complex
+-------------------------------------------------------------------------------
+
+data ComplicatedMonad r a =
+    ReaderAndCont { runCM1 :: r -> [a], runCM2 :: (a -> Maybe r) -> Maybe r }
+        deriving Functor
+
+instance GFunctor (ComplicatedMonad r) where
+  gmap = gmapdefault
+
+complicatedMonad1 :: ComplicatedMonad Int Float
+complicatedMonad1 = ReaderAndCont (replicate 3 . fromIntegral) (\k -> k 10.5 <|> k 121.5)
+
+fmappedCM, gmappedCM :: ComplicatedMonad Int Int
+fmappedCM = fmap (floor . subtract 34.6) complicatedMonad1
+gmappedCM = gmap (floor . subtract 34.6) complicatedMonad1
+
+positive :: Int -> Maybe Int
+positive n = if n > 0 then Just n else Nothing
+
 --------------------------------------------------------------------------------
 -- Temporary tests for TH generation
 --------------------------------------------------------------------------------
@@ -385,6 +437,9 @@ $(deriveAll0And1 ''Nested)
 $(deriveAll0And1 ''Bush)
 
 $(deriveAll0And1 ''Weird)
+
+$(deriveAll0And1 ''Reader)
+$(deriveAll0And1 ''ComplicatedMonad)
 
 $(deriveAll0And1 ''Empty)
 $(deriveAll0And1 ''(:/:))

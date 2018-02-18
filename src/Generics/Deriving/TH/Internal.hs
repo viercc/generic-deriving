@@ -760,6 +760,15 @@ mkGD4'9_v = mkNameG_v "base" "GHC.Generics"
 mkGD4'9_v = mkNameG_v gdPackageKey "Generics.Deriving.Base.Internal"
 #endif
 
+mkGDFuture_tc :: String -> Name
+mkGDFuture_tc = mkNameG_tc gdPackageKey "Generics.Deriving.Base.Internal"
+
+mkGDFuture_v :: String -> Name
+mkGDFuture_v = mkNameG_v gdPackageKey "Generics.Deriving.Base.Internal"
+
+mkGDFuture_d :: String -> Name
+mkGDFuture_d = mkNameG_d gdPackageKey "Generics.Deriving.Base.Internal"
+
 mkBaseName_d :: String -> String -> Name
 mkBaseName_d = mkNameG_d "base"
 
@@ -771,6 +780,9 @@ mkGHCPrimName_tc = mkNameG_tc "ghc-prim"
 
 mkGHCPrimName_v :: String -> String -> Name
 mkGHCPrimName_v = mkNameG_v "ghc-prim"
+
+arrDataName :: Name
+arrDataName = mkGDFuture_d "Arr1"
 
 comp1DataName :: Name
 comp1DataName = mkGD4'4_d "Comp1"
@@ -831,6 +843,9 @@ uIntDataName = mkGD4'9_d "UInt"
 
 uWordDataName :: Name
 uWordDataName = mkGD4'9_d "UWord"
+
+arrTypeName :: Name
+arrTypeName = mkGDFuture_tc ":->:"
 
 c1TypeName :: Name
 c1TypeName = mkGD4'4_tc "C1"
@@ -960,6 +975,9 @@ uIntHashValName = mkGD4'9_v "uInt#"
 
 uWordHashValName :: Name
 uWordHashValName = mkGD4'9_v "uWord#"
+
+unArr1ValName :: Name
+unArr1ValName = mkGDFuture_v "unArr1"
 
 unComp1ValName :: Name
 unComp1ValName = mkGD4'4_v "unComp1"

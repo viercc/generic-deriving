@@ -757,6 +757,8 @@ repField gk dv dt ns typeSubst mbF ssi t =
 repFieldArg :: GenericKind -> Type -> Q Type
 repFieldArg _ ForallT{} = rankNError
 repFieldArg gk (SigT t _) = repFieldArg gk t
+repFieldArg gk (AppT (AppT ArrowT t0) t1) =
+  arrT (repFieldArg gk t0) (repFieldArg gk t1)
 repFieldArg Gen0 t = boxT t
 repFieldArg (Gen1 name _) (VarT t) | t == name = conT par1TypeName
 repFieldArg gk@(Gen1 name _) t = do
@@ -784,6 +786,9 @@ repFieldArg gk@(Gen1 name _) t = do
      else case rhsArgs of
           []   -> rec0Type
           ty:_ -> inspectTy ty
+
+arrT :: Q Type -> Q Type -> Q Type
+arrT ty1 ty2 = conT arrTypeName `appT` ty1 `appT` ty2
 
 boxT :: Type -> Q Type
 boxT ty = case unboxedRepNames ty of
@@ -893,8 +898,21 @@ fromField gk nr t = conE m1DataName `appE` (fromFieldWrap gk nr =<< expandSyn t)
 fromFieldWrap :: GenericKind -> Name -> Type -> Q Exp
 fromFieldWrap _             _  ForallT{}  = rankNError
 fromFieldWrap gk            nr (SigT t _) = fromFieldWrap gk nr t
+fromFieldWrap gk            nr (AppT (AppT ArrowT t0) t1) =
+  conE arrDataName `appE`
+    (fromFieldAsFun gk t1 `dotE` varE nr `dotE` toFieldAsFun gk t0)
 fromFieldWrap Gen0          nr t          = conE (boxRepName t) `appE` varE nr
 fromFieldWrap (Gen1 name _) nr t          = wC t name           `appE` varE nr
+
+fromFieldAsFun :: GenericKind -> Type -> Q Exp
+fromFieldAsFun gk t =
+  do nx <- newName "x"
+     lamE [varP nx] (fromFieldWrap gk nx t)
+
+dotE :: ExpQ -> ExpQ -> ExpQ
+dotE x y = infixApp x (varE composeValName) y
+
+infixr 8 `dotE`
 
 wC :: Type -> Name -> Q Exp
 wC (VarT t) name | t == name = conE par1DataName
@@ -911,9 +929,8 @@ wC t name
           inspectTy (VarT a)
             | a == name
             = conE rec1DataName
-          inspectTy beta = infixApp (conE comp1DataName)
-                                    (varE composeValName)
-                                    (varE fmapValName `appE` wC beta name)
+          inspectTy beta = conE comp1DataName `dotE`
+                             (varE fmapValName `appE` wC beta name)
 
       itf <- isTyFamily tyHead
       if any (not . (`ground` name)) lhsArgs
@@ -936,8 +953,8 @@ toCon gClass wrap m i (NormalC cn _) = do
     fNames   <- newNameList "f" $ length ts
     match
       (wrap $ lrP m i $ conP m1DataName
-        [foldr1 prod (zipWith (toField gk) fNames ts)])
-      (normalB $ foldl appE (conE cn) (zipWith (\nr -> expandSyn >=> toConUnwC gk nr)
+        [foldr1 prod (map (\nr -> conP m1DataName [varP nr]) fNames)])
+      (normalB $ foldl appE (conE cn) (zipWith (\nr -> expandSyn >=> toField gk nr)
                                       fNames ts)) []
   where prod x y = conP productDataName [x,y]
 toCon _ wrap m i (RecC cn []) =
@@ -949,52 +966,51 @@ toCon gClass wrap m i (RecC cn _) = do
     fNames   <- newNameList "f" $ length ts
     match
       (wrap $ lrP m i $ conP m1DataName
-        [foldr1 prod (zipWith (toField gk) fNames ts)])
-      (normalB $ foldl appE (conE cn) (zipWith (\nr -> expandSyn >=> toConUnwC gk nr)
+        [foldr1 prod (map (\nr -> conP m1DataName [varP nr]) fNames)])
+      (normalB $ foldl appE (conE cn) (zipWith (\nr -> expandSyn >=> toField gk nr)
                                                fNames ts)) []
   where prod x y = conP productDataName [x,y]
 toCon gk wrap m i (InfixC t1 cn t2) =
   toCon gk wrap m i (NormalC cn [t1,t2])
 toCon _ _ _ _ con = gadtError con
 
-toConUnwC :: GenericKind -> Name -> Type -> Q Exp
-toConUnwC Gen0          nr _ = varE nr
-toConUnwC (Gen1 name _) nr t = unwC t name `appE` varE nr
+toField :: GenericKind -> Name -> Type -> Q Exp
+toField gk nr t = toFieldAsFun gk t `appE` varE nr
 
-toField :: GenericKind -> Name -> Type -> Q Pat
-toField gk nr t = conP m1DataName [toFieldWrap gk nr t]
-
-toFieldWrap :: GenericKind -> Name -> Type -> Q Pat
-toFieldWrap Gen0   nr t = conP (boxRepName t) [varP nr]
-toFieldWrap Gen1{} nr _ = varP nr
-
-unwC :: Type -> Name -> Q Exp
-unwC (SigT t _) name = unwC t name
-unwC (VarT t)   name | t == name = varE unPar1ValName
-unwC t name
-  | ground t name = varE $ unboxRepName t
+toFieldAsFun :: GenericKind -> Type -> Q Exp
+toFieldAsFun gk (SigT t _) = toFieldAsFun gk t
+toFieldAsFun gk (AppT (AppT ArrowT t0) t1) =
+  do nf <- newName "f"
+     let unwrapF =
+           lamE [varP nf] $
+               toFieldAsFun gk t1 `dotE`
+               varE nf `dotE`
+               fromFieldAsFun gk t0
+     unwrapF `dotE` varE unArr1ValName
+toFieldAsFun Gen0 t = varE $ unboxRepName t
+toFieldAsFun (Gen1 name _) (VarT a)
+  | a == name = varE unPar1ValName
+toFieldAsFun gk@(Gen1 name _) t
+  | ground t name = varE (unboxRepName t)
   | otherwise = do
       let tyHead:tyArgs      = unapplyTy t
           numLastArgs        = min 1 $ length tyArgs
           (lhsArgs, rhsArgs) = splitAt (length tyArgs - numLastArgs) tyArgs
-
-          inspectTy :: Type -> Q Exp
-          inspectTy ForallT{} = rankNError
-          inspectTy (SigT ty _) = inspectTy ty
-          inspectTy (VarT a)
-            | a == name
-            = varE unRec1ValName
-          inspectTy beta = infixApp (varE fmapValName `appE` unwC beta name)
-                                    (varE composeValName)
-                                    (varE unComp1ValName)
-
       itf <- isTyFamily tyHead
       if any (not . (`ground` name)) lhsArgs
-           || any (not . (`ground` name)) tyArgs && itf
-         then outOfPlaceTyVarError
-         else case rhsArgs of
+          || any (not . (`ground` name)) tyArgs && itf
+        then outOfPlaceTyVarError
+        else case rhsArgs of
               []   -> varE $ unboxRepName t
               ty:_ -> inspectTy ty
+      where
+        inspectTy :: Type -> Q Exp
+        inspectTy ForallT{} = rankNError
+        inspectTy (SigT ty _) = inspectTy ty
+        inspectTy (VarT a)
+          | a == name  = varE unRec1ValName
+        inspectTy beta = (varE fmapValName `appE` toFieldAsFun gk beta) `dotE`
+                         varE unComp1ValName
 
 unboxRepName :: Type -> Name
 unboxRepName = maybe unK1ValName trd3 . unboxedRepNames
