@@ -7,6 +7,9 @@ See pre-existing discussion.
 
  * [#8516](https://ghc.haskell.org/trac/ghc/ticket/8516)
 
+See [/test/ExampleSpec.hs](https://github.com/viercc/generic-deriving/blob/experiment-generic-arr/tests/ExampleSpec.hs)
+for the working example. (See `Reader` and `ComplicatedMonad` example.)
+
 ## Motivation
 
 Current implementation of `Generic1` has no way to handle
@@ -15,7 +18,7 @@ any type including `f p -> g p`, unless parameter `p` is phantom in
 is invalid for `Cont`. Thus you can't derive `GFunctor (Cont r)`
 automatically, even though `deriving Functor` works for both.
 
-```
+```haskell
 newtype Reader r a = Reader { runReader :: r -> a }
   deriving (Functor, Generic1)
 
@@ -27,7 +30,7 @@ And there can't be `GContravariant` class to automatically
 derive [Contravariant](https://hackage.haskell.org/package/contravariant)
 instances, even for very simple one like this.
 
-```
+```haskell
 newtype Predicate a = Predicate (a -> Bool)
   deriving (Generic1)
 ```
@@ -35,7 +38,7 @@ newtype Predicate a = Predicate (a -> Bool)
 These are due to how Generic1 represents your type.
 Ignoring metadata, current implementation is this:
 
-```
+```haskell
 data T a b p =
    T1 a p
  | T2 (Maybe [T a b p])
@@ -75,7 +78,7 @@ specially?**
 Introduce new type `:->:` to base representation of type,
 as a new friend of `K1`, `Par1`, `:+:`, `:*:`, ...
 
-```
+```haskell
 newtype (:->:) f g p = Arr1 { unArr1 :: f p -> g p }
 ```
 
@@ -86,7 +89,7 @@ it finds `f` and `g` such that `t1 -> t2 = (f :->: g) p`.
 Above example do not change much in new method.
 
 
-```
+```haskell
 data T a b p =
    T1 a p
  | T2 (Maybe [T a b p])
@@ -100,7 +103,7 @@ type instance Rep1 (T a b) =
 
 And this method works for `Cont` example no problem.
 
-```
+```haskell
 newtype Cont r a   = Cont { runCont :: (a -> r) -> r }
 
 type instance Rep1 (Cont r) =
@@ -110,7 +113,7 @@ type instance Rep1 (Cont r) =
 How do we derive `GFunctor (Cont r)`,
 when `Rep1 (Cont r)` involves new friend `:->:`?
 
-```
+```haskell
 class GFunctor f where
   gmap :: (a -> b) -> f a -> f b
 
@@ -144,5 +147,5 @@ instance (GFunctor f, GContravariant g) => GContravariant (f :->: g) where
   gcontramap q (Arr1 r) = Arr1 $ gcontramap q . r . gmap q
 ```
 
-These instance gives you `GFunctor ((Par1 :-> K1 r) :-> K1 r)` and it works as expected.
+These instances give you `GFunctor ((Par1 :-> K1 r) :-> K1 r)` and it works as expected.
 
